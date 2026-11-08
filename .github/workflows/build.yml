@@ -34,6 +34,7 @@ jobs:
           mkdir src
           tar -xzf horizon-source.tar.gz -C src --strip-components=1
           cp assets/vesper.ico src/packaging/icons/horizon.ico
+          cp assets/vesper-64.png src/crates/horizon-theme/icons/horizon-64.png
           python rebrand.py src
 
       - uses: Swatinem/rust-cache@v2
