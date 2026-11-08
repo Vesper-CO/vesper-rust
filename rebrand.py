@@ -33,6 +33,10 @@ for rel in ["crates/horizon-client/src/game.rs", "crates/horizon-client/src/game
 edit("crates/horizon-client/src/game/split/windows.rs", '"Horizon', '"Vesper')
 edit("crates/horizon-client/src/ui_theme.rs", 'BOOT_TEXT, "Horizon"', 'BOOT_TEXT, "Vesper"')
 
+# The very first screen: a black window with the name in big letters, painted with Windows GDI before the
+# renderer has started (that is the "Horizon" that used to flash before "Vesper").
+edit("crates/horizon-threads/src/boot_paint.rs", '"Horizon".encode_utf16()', '"Vesper".encode_utf16()')
+
 # The version line on the title screen ("Horizon 26.x (Rust)") and the nightly label in the corner.
 edit("crates/horizon-client/src/title.rs",
      r'let version = format!\("Horizon \{\} \(Rust\)",[^;]*;\s*batch\.text\(atlas, &version[^;]*;', "", regex=True)
@@ -41,6 +45,13 @@ edit("crates/horizon-client/src/title.rs",
 
 # ---- settings -----------------------------------------------------------------------------------
 edit("crates/horizon-client-render/src/settings_shell.rs", 'Text::literal("Horizon")', 'Text::literal("Vesper")')
+
+# ---- the .exe's own properties: Task Manager, file Properties, the taskbar tooltip ---------------------
+edit("crates/horizon-client/build.rs", "        resource.set_icon(&resource_icon);\n",
+     "        resource.set_icon(&resource_icon);\n"
+     "        for (k, v) in [(\"ProductName\", \"Vesper\"), (\"FileDescription\", \"Vesper\"), (\"InternalName\", \"vesper-client\"),\n"
+     "                       (\"OriginalFilename\", \"vesper-client.exe\"), (\"CompanyName\", \"Vesper\"), (\"LegalCopyright\", \"Vesper, based on Horizon (MIT)\")] {\n"
+     "            resource.set(k, v);\n        }\n")
 
 # ---- nothing is sent to Horizon's servers ---------------------------------------------------------
 edit("crates/horizon-telemetry/src/lib.rs", "        _ => Some(DEFAULT_ENDPOINT.to_owned()),", "        _ => None,")
@@ -62,6 +73,32 @@ for crate in CLIENT_CRATES:
         if n != t:
             f.write_text(n, encoding="utf-8"); count += 1
 done.append(f"ok  text strings in {count} client source files")
+
+# Sentences that mention the name in the middle ("Start Horizon from the launcher", "Horizon's prepared game
+# files are missing"). Only text inside balanced string literals on one line is touched, never identifiers
+# such as Page::Horizon, and never lowercase names (paths, ids, the network brand `horizon`).
+def sweep_sentences(text):
+    out, changed = [], 0
+    for line in text.split("\n"):
+        masked = line.replace("'\"'", "'\\x00'")
+        if masked.lstrip().startswith("//") or masked.count('"') % 2 or "Horizon" not in line:
+            out.append(line); continue
+        parts = re.split(r'("(?:[^"\\]|\\.)*")', masked)
+        for i in range(1, len(parts), 2):
+            new = re.sub(r"(?<![:\w.])Horizon\b(?!::)", "Vesper", parts[i])
+            if new != parts[i]:
+                parts[i] = new; changed += 1
+        out.append("".join(parts).replace("'\\x00'", "'\"'"))
+    return "\n".join(out), changed
+
+sentences = 0
+for crate in CLIENT_CRATES + ["horizon-threads"]:
+    for f in (root / "crates" / crate / "src").rglob("*.rs"):
+        t = f.read_text(encoding="utf-8")
+        n, c = sweep_sentences(t)
+        if c:
+            f.write_text(n, encoding="utf-8"); sentences += c
+done.append(f"ok  {sentences} sentences mentioning the name")
 
 # Language files, every language.
 langs = list((root / "crates/horizon-client/assets/horizon/lang").glob("*.json"))
