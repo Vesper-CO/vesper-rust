@@ -13,7 +13,7 @@ used, or that horizon-mixins refuses, is left out with the reason in the report;
 Native mods are not sandboxed: they run with the player's rights, so the list is yours to review. Every
 file is checked against the size and SHA-256 the index lists, and nothing comes from outside GitHub.
 """
-import argparse, hashlib, json, re, shutil, subprocess, sys, urllib.request, zipfile
+import argparse, hashlib, json, re, shutil, subprocess, sys, time, urllib.request, zipfile
 from pathlib import Path
 
 INDEX = "https://horizon-rust.github.io/horizon-mods/index.json"
@@ -35,10 +35,16 @@ def read_list(path):
 
 
 def fetch(url_or_path):
-    if re.match(r"https?://", url_or_path):
-        with urllib.request.urlopen(url_or_path, timeout=120) as r:
-            return r.read()
-    return Path(url_or_path).read_bytes()
+    if not re.match(r"https?://", url_or_path):
+        return Path(url_or_path).read_bytes()
+    for attempt in range(5):  # GitHub's servers answer 5xx now and then; a mod must not drop out over that
+        try:
+            with urllib.request.urlopen(url_or_path, timeout=120) as r:
+                return r.read()
+        except Exception:
+            if attempt == 4:
+                raise
+            time.sleep(3 * (attempt + 1))
 
 
 def check_url(url):

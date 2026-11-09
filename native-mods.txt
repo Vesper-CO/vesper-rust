@@ -18,9 +18,10 @@ status_effect_hud
 toggle_sprint
 inventory_profiles
 blockscope
-fullbright
-jade
 eatinganimation
 chatheads
 light_overlay
 rightharvest
+
+# Left out on purpose: jade (does not compile against the current Horizon: it reads mob_hit() as a 2-value result),
+# fullbright (horizon-mixins refuses it on the current Horizon). Try them again after a Horizon update.
