@@ -23,6 +23,24 @@ Based on [Horizon](https://github.com/horizon-rust/horizon) (MIT). See `NOTICE.m
 
 Until a build exists, Vesper falls back to Horizon's official build.
 
+## Native mods
+
+Most of Horizon's mod library (playhorizon.dev/mods) is *native* mods: Rust code that is compiled into the
+game itself. The workflow does that for the mods listed in `native-mods.txt` (one library id per line):
+
+1. `native_mods.py` downloads each mod from Horizon's library, checks its size and SHA-256 against the
+   library's index, and applies it to the rebranded source with `horizon-mixins` (the tool Horizon's own
+   launcher uses).
+2. The client is compiled from that source. If that fails the build tries `native-mods-core.txt` (Horizon's
+   own six), then no mods, so a bad mod never stops a release.
+3. The mods that made it are listed in the zip as `vesper-mods.json`; Vesper's Mods page shows them as
+   "Built in", and players switch each one on or off in the game under Options > Mods.
+
+To add a mod, put its id (the name in its playhorizon.dev/mods address) in `native-mods.txt` and run the
+workflow again. Only mods built on Horizon's native hook points can be added; the Actions summary lists any
+mod that was left out and why. Native mods are not sandboxed (they run with the player's rights), so read
+what you add. Mods that do the same job (two fullbright mods, two zoom mods) can clash: add one of each.
+
 ## If a build fails
 
 `rebrand.py` stops the build when Horizon has changed code it edits, so a half-renamed client is never

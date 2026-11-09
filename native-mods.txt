@@ -1,0 +1,26 @@
+# Native mods compiled into the Vesper client, one id from playhorizon.dev/mods per line.
+# Only mods that build on Horizon's native hook points work here; the build skips any that cannot be used.
+# Native mods are not sandboxed: they run with the player's rights, so read what you add.
+
+# Horizon's own
+zoom
+fps_overlay
+keystrokes
+minimap
+coords_hud
+recipes
+
+# Quality of life
+appleskin
+armor_status
+held_item_info
+status_effect_hud
+toggle_sprint
+inventory_profiles
+blockscope
+fullbright
+jade
+eatinganimation
+chatheads
+light_overlay
+rightharvest

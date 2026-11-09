@@ -1,7 +1,9 @@
 name: Build Vesper Rust client
 
-# Takes Horizon's newest official nightly, renames the client to Vesper (rebrand.py), builds it,
-# and publishes a signed zip that Vesper downloads. Runs every Monday and on demand.
+# Takes Horizon's newest official nightly, renames the client to Vesper (rebrand.py), compiles the native
+# mods in native-mods.txt into it (native_mods.py), builds it, and publishes a signed zip that Vesper
+# downloads. If the full mod list does not compile it tries native-mods-core.txt, then no mods at all.
+# Runs every Monday and on demand.
 on:
   workflow_dispatch:
   schedule:
@@ -37,14 +39,68 @@ jobs:
           cp assets/vesper-64.png src/crates/horizon-theme/icons/horizon-64.png
           python rebrand.py src
 
+      - name: Find Horizon's commit (native mods are built for one exact commit)
+        id: rev
+        shell: bash
+        run: |
+          short=$(tar -tzf horizon-source.tar.gz | sed -n '1p' | sed 's#^horizon-##; s#/$##')
+          full=$(git ls-remote https://github.com/horizon-rust/horizon | grep -i "^${short}" | sed -n '1p' | cut -f1)
+          echo "short=$short full=$full"
+          if ! echo "$full" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::warning::Could not find Horizon's full commit id, so no native mods are built in."
+            full=""
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
 
-      - name: Build the client
+      - name: Cache horizon-mixins
+        id: mixins-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mixins
+          key: horizon-mixins-5a64af938ec86b00d53d16a408aabc0038fb3e57
+
+      - name: Install horizon-mixins (the tool Horizon's launcher compiles native mods with)
+        if: steps.rev.outputs.full != '' && steps.mixins-cache.outputs.cache-hit != 'true'
         shell: bash
-        working-directory: src
-        run: cargo build --release --locked -p horizon-client --bin horizon-client
+        run: |
+          cargo install --locked --git https://github.com/horizon-rust/horizon-mixins \
+            --rev 5a64af938ec86b00d53d16a408aabc0038fb3e57 --root "$RUNNER_TEMP/mixins" horizon-mixins-cli
+
+      - name: Build the client (with the native mods when they compile)
+        shell: bash
+        env:
+          REV: ${{ steps.rev.outputs.full }}
+          TOOL: ${{ runner.temp }}/mixins/bin/horizon-mixins.exe
+          CARGO_TARGET_DIR: ${{ github.workspace }}/src/target
+        run: |
+          built=""
+          if [ -n "$REV" ]; then
+            for list in native-mods.txt native-mods-core.txt; do
+              echo "::group::Native mods from $list"
+              if python native_mods.py --source src --revision "$REV" --list "$list" --tool "$TOOL" \
+                   --stage stage --report mods-report.json \
+                 && (cd stage && cargo build --release --locked -p horizon-client --bin horizon-client); then
+                built="$list"
+                echo "::endgroup::"
+                break
+              fi
+              echo "::endgroup::"
+              echo "::warning::The build with $list failed; trying a smaller one."
+            done
+          fi
+          if [ -z "$built" ]; then
+            echo "::warning::Building without native mods."
+            printf '{"mods":[],"skipped":[]}' > mods-report.json
+            (cd src && cargo build --release --locked -p horizon-client --bin horizon-client)
+          fi
+          {
+            echo "### Native mods built in (${built:-none})"
+            python -c "import json;r=json.load(open('mods-report.json'));print(chr(10).join('- '+m['name']+' '+m['version'] for m in r['mods']) or '(none)');print();print('Left out:');print(chr(10).join('- '+s['id']+': '+s['reason'] for s in r.get('skipped',[])) or '(nothing)')"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package
         shell: bash
@@ -54,13 +110,17 @@ jobs:
           cp src/target/release/horizon-client.exe "pkg/$dir/vesper-client.exe"
           rm -f "pkg/$dir/horizon-client.exe"
           cp LICENSE-HORIZON NOTICE.md "pkg/$dir/"
+          cp mods-report.json "pkg/$dir/vesper-mods.json"
           mkdir -p out
+          cp mods-report.json out/vesper-mods.json
           (cd pkg && 7z a -tzip ../out/vesper-rust-windows-x64.zip "$dir" > /dev/null)
 
       - uses: actions/upload-artifact@v4
         with:
           name: vesper-rust
-          path: out/vesper-rust-windows-x64.zip
+          path: |
+            out/vesper-rust-windows-x64.zip
+            out/vesper-mods.json
           if-no-files-found: error
 
   publish:
@@ -91,4 +151,4 @@ jobs:
             vesper-rust-windows-x64.zip SHA256SUMS SHA256SUMS.sig \
             --repo "${{ github.repository }}" \
             --title "Vesper Rust client $(date -u +%Y-%m-%d)" \
-            --notes "Built from Horizon's nightly of the same day. Vesper downloads this automatically."
+            --notes "Built from Horizon's nightly of the same day. Vesper downloads this automatically. Native mods built in: $(jq -r '[.mods[].name] | join(", ")' vesper-mods.json | sed 's/^$/none/')."

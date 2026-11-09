@@ -1,0 +1,8 @@
+# The smaller list the build falls back to when the full list (native-mods.txt) does not compile:
+# Horizon's own mods.
+zoom
+fps_overlay
+keystrokes
+minimap
+coords_hud
+recipes
