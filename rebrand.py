@@ -6,7 +6,7 @@ Usage: python rebrand.py <unpacked horizon source folder>
 Every edit is checked: a REQUIRED edit that no longer matches (Horizon changed that code) stops the build,
 so a half-rebranded client is never published. OPTIONAL edits only warn.
 """
-import pathlib, re, sys
+import os, pathlib, re, sys
 
 root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "src")
 CLIENT_CRATES = ["horizon-client", "horizon-client-render", "horizon-client-core", "horizon-client-input"]
@@ -56,8 +56,16 @@ edit("crates/horizon-client/build.rs", "        resource.set_icon(&resource_icon
 # ---- nothing is sent to Horizon's servers ---------------------------------------------------------
 edit("crates/horizon-telemetry/src/lib.rs", "        _ => Some(DEFAULT_ENDPOINT.to_owned()),", "        _ => None,")
 edit("crates/horizon-cosmetics/src/lib.rs", "pub const ON_BY_DEFAULT: bool = true;", "pub const ON_BY_DEFAULT: bool = false;")
-edit("crates/horizon-client/src/discord_presence.rs", "pub fn start(enabled: bool, automated: bool) {\n",
-     "pub fn start(enabled: bool, automated: bool) {\n    if true {\n        return; // Vesper has no Discord application of its own\n    }\n")
+# Discord Rich Presence runs under Vesper's own application, whose id comes in at build time
+# (VESPER_DISCORD_APP_ID, the repository variable DISCORD_APP_ID). Without one it stays off.
+DISCORD = "crates/horizon-client/src/discord_presence.rs"
+app_id = os.environ.get("VESPER_DISCORD_APP_ID", "").strip()
+if re.fullmatch(r"\d{17,20}", app_id):
+    edit(DISCORD, 'pub const DISCORD_APP_ID: &str = "1563857609738690560";', f'pub const DISCORD_APP_ID: &str = "{app_id}";')
+    edit(DISCORD, '{"large_image": "horizon", "large_text": "Horizon"}', '{"large_image": "vesper", "large_text": "Vesper"}')
+else:
+    edit(DISCORD, "pub fn start(enabled: bool, automated: bool) {\n",
+         "pub fn start(enabled: bool, automated: bool) {\n    if true {\n        return; // no Discord application id was set for this build\n    }\n")
 
 # ---- remaining visible text and links -------------------------------------------------------------
 edit("crates/horizon-client/src/no_resources.rs", "Download the launcher at playhorizon.dev, then press Play there.", "Open Vesper and press Play there.", required=False)

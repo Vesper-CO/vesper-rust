@@ -14,6 +14,8 @@ permissions:
 
 env:
   UPSTREAM: https://github.com/horizon-rust/horizon/releases/download/nightly
+  # Vesper's Discord application id (public), from the repository variable DISCORD_APP_ID. Without it the client has no Rich Presence.
+  VESPER_DISCORD_APP_ID: ${{ vars.DISCORD_APP_ID }}
 
 jobs:
   build:
@@ -110,6 +112,8 @@ jobs:
           cp src/target/release/horizon-client.exe "pkg/$dir/vesper-client.exe"
           rm -f "pkg/$dir/horizon-client.exe"
           cp LICENSE-HORIZON NOTICE.md "pkg/$dir/"
+          # Tell the launcher whether this client shows its own Discord presence (the launcher then steps aside).
+          python -c "import json,os,re;r=json.load(open('mods-report.json'));r['discord']=bool(re.fullmatch(r'\d{17,20}',os.environ.get('VESPER_DISCORD_APP_ID','').strip()));json.dump(r,open('mods-report.json','w'),indent=2)"
           cp mods-report.json "pkg/$dir/vesper-mods.json"
           mkdir -p out
           cp mods-report.json out/vesper-mods.json
