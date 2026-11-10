@@ -14,8 +14,6 @@ permissions:
 
 env:
   UPSTREAM: https://github.com/horizon-rust/horizon/releases/download/nightly
-  # Vesper's Discord application id (public), from the repository variable DISCORD_APP_ID. Without it the client has no Rich Presence.
-  VESPER_DISCORD_APP_ID: ${{ vars.DISCORD_APP_ID }}
 
 jobs:
   build:
@@ -23,6 +21,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Discord application id
+        shell: bash
+        env:
+          RAW: ${{ vars.DISCORD_APP_ID || secrets.DISCORD_APP_ID }}
+        run: |
+          id=$(printf '%s' "$RAW" | tr -dc '0-9')
+          if [ ${#id} -lt 17 ] || [ ${#id} -gt 20 ]; then
+            echo "::warning::DISCORD_APP_ID is missing or not a Discord application id (17-20 digits). The client is built without Discord Rich Presence. Add it under Settings > Secrets and variables > Actions > Variables, then build again."
+            id=""
+          else
+            echo "Discord Rich Presence is on in this build (application id ${id:0:4}...)."
+          fi
+          echo "VESPER_DISCORD_APP_ID=$id" >> "$GITHUB_ENV"
 
       - name: Download Horizon's nightly (source and build) and check its checksums
         shell: bash
