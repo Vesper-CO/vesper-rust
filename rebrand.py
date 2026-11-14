@@ -28,8 +28,11 @@ def edit(rel, pattern, repl, required=True, regex=False, flags=0):
 
 
 # ---- window titles, boot splash, title screen -------------------------------------------------
-for rel in ["crates/horizon-client/src/game.rs", "crates/horizon-client/src/game/no_resources.rs"]:
-    edit(rel, '.with_title("Horizon")', '.with_title("Vesper")')
+# The window title is set in a few places (Horizon moves it between files, so each is optional; the sweep over every
+# client string further down catches any that are left).
+for rel in ["crates/horizon-client/src/game.rs", "crates/horizon-client/src/game/no_resources.rs",
+            "crates/horizon-client/src/game/window_handler.rs", "crates/horizon-client/src/game/loading_screen.rs"]:
+    edit(rel, '.with_title("Horizon")', '.with_title("Vesper")', required=False)
 edit("crates/horizon-client/src/game/split/windows.rs", '"Horizon', '"Vesper')
 edit("crates/horizon-client/src/ui_theme.rs", 'BOOT_TEXT, "Horizon"', 'BOOT_TEXT, "Vesper"')
 
@@ -45,8 +48,8 @@ edit("crates/horizon-client-render/src/settings_shell.rs", 'Text::literal("Horiz
 # ---- nothing is sent to Horizon's servers ---------------------------------------------------------
 edit("crates/horizon-telemetry/src/lib.rs", "        _ => Some(DEFAULT_ENDPOINT.to_owned()),", "        _ => None,")
 edit("crates/horizon-cosmetics/src/lib.rs", "pub const ON_BY_DEFAULT: bool = true;", "pub const ON_BY_DEFAULT: bool = false;")
-edit("crates/horizon-client/src/discord_presence.rs", "pub fn start(enabled: bool, automated: bool) {\n",
-     "pub fn start(enabled: bool, automated: bool) {\n    if true {\n        return; // Vesper has no Discord application of its own\n    }\n")
+edit("crates/horizon-discord/src/lib.rs", "pub fn start(automated: bool) {\n",
+     "pub fn start(automated: bool) {\n    if true {\n        return; // Vesper has no Discord application of its own\n    }\n")
 
 # ---- remaining visible text and links -------------------------------------------------------------
 edit("crates/horizon-client/src/no_resources.rs", "Download the launcher at playhorizon.dev, then press Play there.", "Open Vesper and press Play there.", required=False)
