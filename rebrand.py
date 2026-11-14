@@ -48,9 +48,16 @@ edit("crates/horizon-client-render/src/settings_shell.rs", 'Text::literal("Horiz
 # ---- nothing is sent to Horizon's servers ---------------------------------------------------------
 edit("crates/horizon-telemetry/src/lib.rs", "        _ => Some(DEFAULT_ENDPOINT.to_owned()),", "        _ => None,")
 edit("crates/horizon-cosmetics/src/lib.rs", "pub const ON_BY_DEFAULT: bool = true;", "pub const ON_BY_DEFAULT: bool = false;")
-edit("crates/horizon-discord/src/lib.rs", "pub fn start(automated: bool) {\n",
-     "pub fn start(automated: bool) {\n    if true {\n        return; // Vesper has no Discord application of its own\n    }\n")
-
+# Discord presence: use Vesper's own Discord application when the build gives its id (VESPER_DISCORD_APP_ID),
+# otherwise switch the presence off. Horizon moved this into the horizon-discord crate.
+import os
+discord_id = os.environ.get("VESPER_DISCORD_APP_ID", "").strip()
+if discord_id.isdigit():
+    edit("crates/horizon-discord/src/lib.rs", 'pub const DISCORD_APP_ID: &str = "1563857609738690560";',
+         f'pub const DISCORD_APP_ID: &str = "{discord_id}";')
+else:
+    edit("crates/horizon-discord/src/lib.rs", "pub fn start(automated: bool) {\n",
+         "pub fn start(automated: bool) {\n    if true {\n        return; // no Discord application of Vesper's own\n    }\n")
 # ---- remaining visible text and links -------------------------------------------------------------
 edit("crates/horizon-client/src/no_resources.rs", "Download the launcher at playhorizon.dev, then press Play there.", "Open Vesper and press Play there.", required=False)
 edit("crates/horizon-client/src/lan/mod.rs", "This server is for the Horizon client: playhorizon.dev", "This server is for the Vesper client: github.com/jakedev2/vesper", required=False)
