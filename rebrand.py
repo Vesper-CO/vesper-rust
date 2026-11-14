@@ -6,7 +6,7 @@ Usage: python rebrand.py <unpacked horizon source folder>
 Every edit is checked: a REQUIRED edit that no longer matches (Horizon changed that code) stops the build,
 so a half-rebranded client is never published. OPTIONAL edits only warn.
 """
-import os, pathlib, re, sys
+import pathlib, re, sys
 
 root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "src")
 CLIENT_CRATES = ["horizon-client", "horizon-client-render", "horizon-client-core", "horizon-client-input"]
@@ -33,10 +33,6 @@ for rel in ["crates/horizon-client/src/game.rs", "crates/horizon-client/src/game
 edit("crates/horizon-client/src/game/split/windows.rs", '"Horizon', '"Vesper')
 edit("crates/horizon-client/src/ui_theme.rs", 'BOOT_TEXT, "Horizon"', 'BOOT_TEXT, "Vesper"')
 
-# The very first screen: a black window with the name in big letters, painted with Windows GDI before the
-# renderer has started (that is the "Horizon" that used to flash before "Vesper").
-edit("crates/horizon-threads/src/boot_paint.rs", '"Horizon".encode_utf16()', '"Vesper".encode_utf16()')
-
 # The version line on the title screen ("Horizon 26.x (Rust)") and the nightly label in the corner.
 edit("crates/horizon-client/src/title.rs",
      r'let version = format!\("Horizon \{\} \(Rust\)",[^;]*;\s*batch\.text\(atlas, &version[^;]*;', "", regex=True)
@@ -46,26 +42,11 @@ edit("crates/horizon-client/src/title.rs",
 # ---- settings -----------------------------------------------------------------------------------
 edit("crates/horizon-client-render/src/settings_shell.rs", 'Text::literal("Horizon")', 'Text::literal("Vesper")')
 
-# ---- the .exe's own properties: Task Manager, file Properties, the taskbar tooltip ---------------------
-edit("crates/horizon-client/build.rs", "        resource.set_icon(&resource_icon);\n",
-     "        resource.set_icon(&resource_icon);\n"
-     "        for (k, v) in [(\"ProductName\", \"Vesper\"), (\"FileDescription\", \"Vesper\"), (\"InternalName\", \"vesper-client\"),\n"
-     "                       (\"OriginalFilename\", \"vesper-client.exe\"), (\"CompanyName\", \"Vesper\"), (\"LegalCopyright\", \"Vesper, based on Horizon (MIT)\")] {\n"
-     "            resource.set(k, v);\n        }\n")
-
 # ---- nothing is sent to Horizon's servers ---------------------------------------------------------
 edit("crates/horizon-telemetry/src/lib.rs", "        _ => Some(DEFAULT_ENDPOINT.to_owned()),", "        _ => None,")
 edit("crates/horizon-cosmetics/src/lib.rs", "pub const ON_BY_DEFAULT: bool = true;", "pub const ON_BY_DEFAULT: bool = false;")
-# Discord Rich Presence runs under Vesper's own application, whose id comes in at build time
-# (VESPER_DISCORD_APP_ID, the repository variable DISCORD_APP_ID). Without one it stays off.
-DISCORD = "crates/horizon-client/src/discord_presence.rs"
-app_id = os.environ.get("VESPER_DISCORD_APP_ID", "").strip()
-if re.fullmatch(r"\d{17,20}", app_id):
-    edit(DISCORD, 'pub const DISCORD_APP_ID: &str = "1563857609738690560";', f'pub const DISCORD_APP_ID: &str = "{app_id}";')
-    edit(DISCORD, '{"large_image": "horizon", "large_text": "Horizon"}', '{"large_image": "vesper", "large_text": "Vesper"}')
-else:
-    edit(DISCORD, "pub fn start(enabled: bool, automated: bool) {\n",
-         "pub fn start(enabled: bool, automated: bool) {\n    if true {\n        return; // no Discord application id was set for this build\n    }\n")
+edit("crates/horizon-client/src/discord_presence.rs", "pub fn start(enabled: bool, automated: bool) {\n",
+     "pub fn start(enabled: bool, automated: bool) {\n    if true {\n        return; // Vesper has no Discord application of its own\n    }\n")
 
 # ---- remaining visible text and links -------------------------------------------------------------
 edit("crates/horizon-client/src/no_resources.rs", "Download the launcher at playhorizon.dev, then press Play there.", "Open Vesper and press Play there.", required=False)
@@ -82,38 +63,47 @@ for crate in CLIENT_CRATES:
             f.write_text(n, encoding="utf-8"); count += 1
 done.append(f"ok  text strings in {count} client source files")
 
-# Sentences that mention the name in the middle ("Start Horizon from the launcher", "Horizon's prepared game
-# files are missing"). Only text inside balanced string literals on one line is touched, never identifiers
-# such as Page::Horizon, and never lowercase names (paths, ids, the network brand `horizon`).
-def sweep_sentences(text):
-    out, changed = [], 0
-    for line in text.split("\n"):
-        masked = line.replace("'\"'", "'\\x00'")
-        if masked.lstrip().startswith("//") or masked.count('"') % 2 or "Horizon" not in line:
-            out.append(line); continue
-        parts = re.split(r'("(?:[^"\\]|\\.)*")', masked)
-        for i in range(1, len(parts), 2):
-            new = re.sub(r"(?<![:\w.])Horizon\b(?!::)", "Vesper", parts[i])
-            if new != parts[i]:
-                parts[i] = new; changed += 1
-        out.append("".join(parts).replace("'\\x00'", "'\"'"))
-    return "\n".join(out), changed
-
-sentences = 0
-for crate in CLIENT_CRATES + ["horizon-threads"]:
-    for f in (root / "crates" / crate / "src").rglob("*.rs"):
-        t = f.read_text(encoding="utf-8")
-        n, c = sweep_sentences(t)
-        if c:
-            f.write_text(n, encoding="utf-8"); sentences += c
-done.append(f"ok  {sentences} sentences mentioning the name")
-
 # Language files, every language.
 langs = list((root / "crates/horizon-client/assets/horizon/lang").glob("*.json"))
 for f in langs:
     t = f.read_text(encoding="utf-8")
     f.write_text(re.sub(r"\bHorizon\b", "Vesper", t), encoding="utf-8")
 done.append(f"ok  {len(langs)} language files")
+
+# ---- a "HUD editor" button in the pause menu ----------------------------------------------------------
+# Horizon's HUD editor already exists (its key, or the PvP & HUD page); this adds a button for it to the pause menu,
+# next to the rows other pages add there. All three edits are made together or not at all, so a Horizon update that
+# moves this code only skips the button instead of breaking the build. Set PAUSE_HUD_BUTTON = False to turn it off.
+PAUSE_HUD_BUTTON = True
+
+
+def pause_hud_button():
+    p = root / "crates/horizon-client/src/game/screens.rs"
+    if not p.exists():
+        done.append("skipped pause HUD button: screens.rs not found")
+        return
+    t = p.read_text(encoding="utf-8")
+    rows_old = "            .then_some((SPLIT_SETTINGS, 30))\n            .into_iter()\n            .chain(added)\n"
+    rows_new = ("            .then_some((SPLIT_SETTINGS, 30))\n            .into_iter()\n"
+                "            .chain(std::iter::once((\"vesper.hud_editor\", 31)))\n            .chain(added)\n")
+    act_old = "            30 => self.open_split_settings(),\n"
+    act_new = ("            // Vesper: the \"HUD editor\" button.\n            31 => {\n                self.pause_focus = None;\n"
+               "                self.open_hud_editor(false);\n            }\n") + act_old
+    if t.count(rows_old) != 1 or t.count(act_old) != 1:
+        done.append("skipped pause HUD button: Horizon changed the pause menu code")
+        return
+    p.write_text(t.replace(rows_old, rows_new).replace(act_old, act_new), encoding="utf-8")
+    n = 0
+    for f in (root / "crates/horizon-client/assets/horizon/lang").glob("*.json"):
+        lt = f.read_text(encoding="utf-8")
+        if lt.lstrip().startswith("{") and '"vesper.hud_editor"' not in lt:
+            f.write_text(lt.replace("{", '{\n  "vesper.hud_editor": "HUD editor",', 1), encoding="utf-8")
+            n += 1
+    done.append(f"ok  pause HUD button (screens.rs, {n} language files)")
+
+
+if PAUSE_HUD_BUTTON:
+    pause_hud_button()
 
 print("\n".join(done))
 if failures:
