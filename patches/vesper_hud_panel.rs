@@ -543,26 +543,47 @@ impl PanelState {
     }
 }
 
-/// The 15x15 icon of the pause menu's HUD editor button, in the style of the game's own icons (pixels, no outline):
-/// the Vesper moon and spark. `x`, `y` is the button's top left; the icon sits 3 in, like the other icons.
+/// The icon of the pause menu's HUD editor button: the Vesper logo (crescent moon and spark), drawn in the 15x15 area
+/// the game gives its own icons, but in quarter pixels so the curve and the four-pointed spark keep their shape.
+/// `x`, `y` is the button's top left; the icon sits 3 in, like the other icons.
 pub fn draw_pause_icon(batch: &mut HudBatch, atlas: &HudAtlas, x: f32, y: f32, hover: bool) {
-    let (ox, oy) = (x + 3.0, y + 3.0);
-    let lift = if hover { 28u32 } else { 0 };
-    for py in 0..15u32 {
-        for px in 0..15u32 {
-            let (cx, cy) = (px as f32 + 0.5, py as f32 + 0.5);
-            let in_a = (cx - 6.8).hypot(cy - 8.2) <= 6.4;
-            let in_b = (cx - 10.6).hypot(cy - 5.2) <= 5.4;
-            if !(in_a && !in_b) || px > 10 {
-                continue;
-            }
-            let t = ((px + py) as f32 / 24.0).clamp(0.0, 1.0);
-            let lerp = |a: u32, b: u32| ((a as f32 + (b as f32 - a as f32) * t) as u32 + lift).min(255);
-            let c = (lerp(0xB7, 0x85) << 16) | (lerp(0xAB, 0x74) << 8) | lerp(0xFF, 0xFA);
-            batch.fill(atlas, ox + px as f32, oy + py as f32, 1.0, 1.0, color::hex(c, 255));
+    const N: usize = 60; // quarter pixels across the icon
+    let cell = 15.0 / N as f32;
+    // the part of the 512x512 logo that fills the icon (the moon and the spark, centred)
+    let (lx, ly, span) = (74.5f32, 106.5f32, 340.0f32);
+    let k = span / N as f32;
+    let lift = if hover { 28.0 } else { 0.0 };
+    let kind = |px: f32, py: f32| -> u8 {
+        let in_moon = (px - 231.4).hypot(py - 279.5) <= 149.3 && (px - 337.7).hypot(py - 205.4) > 122.8;
+        if in_moon {
+            return 1;
         }
-    }
-    for (px, py) in [(11u32, 1u32), (11, 2), (11, 3), (11, 4), (11, 5), (9, 3), (10, 3), (12, 3), (13, 3)] {
-        batch.fill(atlas, ox + px as f32, oy + py as f32, 1.0, 1.0, color::hex(0xFFFFFF, 255));
+        let star = ((px - 373.5).abs() / 38.0).powf(0.65) + ((py - 156.5).abs() / 38.0).powf(0.65);
+        if star <= 1.0 { 2 } else { 0 }
+    };
+    let (ox, oy) = (x + 3.0, y + 3.0);
+    for row in 0..N {
+        let py = ly + (row as f32 + 0.5) * k;
+        let mut run: Option<(usize, u8)> = None;
+        for col in 0..=N {
+            let now = if col < N { kind(lx + (col as f32 + 0.5) * k, py) } else { 0 };
+            if let Some((start, kd)) = run {
+                if now != kd {
+                    let c = if kd == 2 {
+                        color::hex(0xFFFFFF, 255)
+                    } else {
+                        // the moon fades from light lilac (top left) to the accent (bottom right)
+                        let t = (((start + col) as f32 / 2.0 + row as f32) / (2.0 * N as f32)).clamp(0.0, 1.0);
+                        let mix = |a: f32, b: f32| ((a + (b - a) * t + lift).min(255.0)) as u32;
+                        color::hex((mix(183.0, 133.0) << 16) | (mix(171.0, 116.0) << 8) | mix(255.0, 250.0), 255)
+                    };
+                    batch.fill(atlas, ox + start as f32 * cell, oy + row as f32 * cell, (col - start) as f32 * cell, cell, c);
+                    run = None;
+                }
+            }
+            if run.is_none() && now != 0 {
+                run = Some((col, now));
+            }
+        }
     }
 }
