@@ -80,6 +80,10 @@ for f in langs:
     f.write_text(re.sub(r"\bHorizon\b", "Vesper", t), encoding="utf-8")
 done.append(f"ok  {len(langs)} language files")
 
+# The first window (painted before the engine loads) draws the name big; it lives in horizon-threads, which the
+# client-crate sweep above does not reach.
+edit("crates/horizon-threads/src/boot_paint.rs", '"Horizon".encode_utf16()', '"Vesper".encode_utf16()', required=False)
+
 # ---- Vesper's HUD editor ------------------------------------------------------------------------------------
 # Replaces Horizon's HUD editor buttons with Vesper's menu (patches/vesper_hud_panel.rs, drawn with the design system's
 # Ui, and patches/vesper_hud.rs, the glue to the settings) and adds a small button for it to the pause menu's icon row,
