@@ -48,7 +48,7 @@ jobs:
           cp assets/vesper.ico src/packaging/icons/horizon.ico
           cp assets/vesper-64.png src/crates/horizon-theme/icons/horizon-64.png
           python rebrand.py src
-          tar -C src -czf source-plain.tar.gz .
+          tar -C src -czhf source-plain.tar.gz .
 
       - uses: Swatinem/rust-cache@v2
         with:
