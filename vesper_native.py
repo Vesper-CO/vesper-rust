@@ -62,13 +62,40 @@ def load_registry(where):
     compat_file = where / "scripts" / "native_compat.py"
     source = compat_file.read_text(encoding="utf-8")
 
-    old = """r'pub const MIXINS_REV: &str = "([0-9a-f]{40})"'"""
-    new = """r'(?:pub\\s+)?const\\s+MIXINS_REV\\s*:\\s*&str\\s*=\\s*"([0-9a-f]{40})"'"""
-
-    if old in source:
-        source = source.replace(old, new, 1)
-        compat_file.write_text(source, encoding="utf-8")
-        print("Patched Horizon MIXINS_REV compatibility.")
+    # The registry looks for `const MIXINS_REV: &str = "<40 hex>"` in Horizon's source. When Horizon changes how it
+    # declares that (different type, `static`, `[u8]`, a Cargo.toml `rev = ...`), the lookup returns None and crashes.
+    # Replace every `re.search(<MIXINS_REV pattern>, text).group(1)` with a tolerant helper.
+    helper = (
+        "\n\ndef _vesper_mixins_rev(text):\n"
+        "    import re as _re\n"
+        "    pats = [\n"
+        "        r'(?:pub(?:\\([^)]*\\))?\\s+)?(?:const|static)\\s+MIXINS_REV\\b[^=]*=\\s*\"([0-9a-fA-F]{40})\"',\n"
+        "        r'MIXINS_REV[^\\n]{0,80}?([0-9a-fA-F]{40})',\n"
+        "        r'horizon-mixins[^\\n]*?\\brev\\s*=\\s*\"([0-9a-fA-F]{40})\"',\n"
+        "    ]\n"
+        "    for p in pats:\n"
+        "        m = _re.search(p, text)\n"
+        "        if m:\n"
+        "            return m.group(1).lower()\n"
+        "    ctx = [l for l in text.splitlines() if 'MIXINS' in l.upper()][:10]\n"
+        "    raise SystemExit('Could not find MIXINS_REV in Horizon source. Lines mentioning it: ' + repr(ctx))\n"
+    )
+    import re as _re
+    if "_vesper_mixins_rev" not in source:
+        source, n = _re.subn(
+            r"re\.search\([^\n]*?MIXINS_REV[^\n]*?,\s*text\)\.group\(1\)",
+            "_vesper_mixins_rev(text)",
+            source,
+        )
+        if n:
+            source = source + helper
+            compat_file.write_text(source, encoding="utf-8")
+            print(f"Patched Horizon MIXINS_REV compatibility ({n} place(s)).")
+        else:
+            print("WARNING: could not find the MIXINS_REV lookup to patch; dumping it:")
+            for i, line in enumerate(source.splitlines(), 1):
+                if "MIXINS_REV" in line:
+                    print(f"  native_compat.py:{i}: {line}")
 
     sys.path.insert(0, str(where / "scripts"))
     sys.path.insert(0, str(where / "native" / "tools"))
