@@ -24,6 +24,7 @@ Needs: git, Python 3.11, cargo, rsync (a Linux runner), and the network. Set GIT
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,8 +51,61 @@ def ids_in(path):
     return out
 
 
+# Injected into the registry's native_compat.py. Horizon now declares `MIXINS_REV` as a pointer
+# (`pub const MIXINS_REV: &str = horizon_platform::mod_package::mixins_tool::REV;`), so the 40-hex commit has to be
+# looked up where `REV` itself is defined, in the Horizon source tree (path in $VESPER_HORIZON_SRC).
+HELPER = r'''
+
+def _vesper_mixins_rev(text):
+    import os as _os, re as _re, subprocess as _sp
+    hexrev = r'"([0-9a-fA-F]{40})"'
+    pats = [
+        r'(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+MIXINS_REV\b[^=]*=\s*' + hexrev,
+        r'horizon-mixins[^\n]*?\brev\s*=\s*' + hexrev,
+    ]
+    for p in pats:
+        m = _re.search(p, text)
+        if m:
+            return m.group(1).lower()
+    # Pointer: look for `const REV: &str = "<40 hex>"` in the source tree, preferring the mixins_tool module.
+    root = _os.environ.get("VESPER_HORIZON_SRC", "")
+    rev_pat = _re.compile(r'(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+REV\s*:\s*&(?:\'static\s+)?str\s*=\s*' + hexrev)
+    best = None
+    if root:
+        for dp, dn, fn in _os.walk(root):
+            dn[:] = [d for d in dn if d not in (".git", "target", "node_modules")]
+            for f in fn:
+                if not f.endswith(".rs"):
+                    continue
+                path = _os.path.join(dp, f)
+                try:
+                    src = open(path, encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    continue
+                m = rev_pat.search(src)
+                if m:
+                    score = ("mixins_tool" in path) * 2 + ("mixins" in path.lower())
+                    if best is None or score > best[0]:
+                        best = (score, m.group(1).lower(), path)
+    if best:
+        print("MIXINS_REV " + best[1] + " from " + best[2])
+        return best[1]
+    # Last resort: the tool's current head (bundles are normally tested against a pinned commit; this may differ).
+    try:
+        out = _sp.run(["git", "ls-remote", "https://github.com/horizon-rust/horizon-mixins", "HEAD"],
+                      capture_output=True, text=True, check=True, timeout=60).stdout.split()
+        if out and len(out[0]) == 40:
+            print("WARNING: MIXINS_REV not found in source; using horizon-mixins HEAD " + out[0])
+            return out[0].lower()
+    except Exception as e:
+        print("ls-remote failed:", e)
+    ctx = [l for l in text.splitlines() if "MIXINS" in l.upper()][:10]
+    raise SystemExit("Could not find MIXINS_REV. Lines mentioning it: " + repr(ctx))
+'''
+
+
 def load_registry(where):
-    """Clone the registry scripts and make MIXINS_REV parsing compatible."""
+    """Clone the registry scripts and make its MIXINS_REV lookup work with Horizon's current source."""
     if not (where / "scripts" / "native_compat.py").is_file():
         shutil.rmtree(where, ignore_errors=True)
         subprocess.run(
@@ -62,35 +116,15 @@ def load_registry(where):
     compat_file = where / "scripts" / "native_compat.py"
     source = compat_file.read_text(encoding="utf-8")
 
-    # The registry looks for `const MIXINS_REV: &str = "<40 hex>"` in Horizon's source. When Horizon changes how it
-    # declares that (different type, `static`, `[u8]`, a Cargo.toml `rev = ...`), the lookup returns None and crashes.
-    # Replace every `re.search(<MIXINS_REV pattern>, text).group(1)` with a tolerant helper.
-    helper = (
-        "\n\ndef _vesper_mixins_rev(text):\n"
-        "    import re as _re\n"
-        "    pats = [\n"
-        "        r'(?:pub(?:\\([^)]*\\))?\\s+)?(?:const|static)\\s+MIXINS_REV\\b[^=]*=\\s*\"([0-9a-fA-F]{40})\"',\n"
-        "        r'MIXINS_REV[^\\n]{0,80}?([0-9a-fA-F]{40})',\n"
-        "        r'horizon-mixins[^\\n]*?\\brev\\s*=\\s*\"([0-9a-fA-F]{40})\"',\n"
-        "    ]\n"
-        "    for p in pats:\n"
-        "        m = _re.search(p, text)\n"
-        "        if m:\n"
-        "            return m.group(1).lower()\n"
-        "    ctx = [l for l in text.splitlines() if 'MIXINS' in l.upper()][:10]\n"
-        "    raise SystemExit('Could not find MIXINS_REV in Horizon source. Lines mentioning it: ' + repr(ctx))\n"
-    )
-    import re as _re
     if "_vesper_mixins_rev" not in source:
-        source, n = _re.subn(
+        source, n = re.subn(
             r"re\.search\([^\n]*?MIXINS_REV[^\n]*?,\s*text\)\.group\(1\)",
             "_vesper_mixins_rev(text)",
             source,
         )
         if n:
-            source = source + helper
-            compat_file.write_text(source, encoding="utf-8")
-            print(f"Patched Horizon MIXINS_REV compatibility ({n} place(s)).")
+            compat_file.write_text(source + HELPER, encoding="utf-8")
+            print(f"Patched MIXINS_REV lookup ({n} place(s)).")
         else:
             print("WARNING: could not find the MIXINS_REV lookup to patch; dumping it:")
             for i, line in enumerate(source.splitlines(), 1):
@@ -102,6 +136,7 @@ def load_registry(where):
 
     import native_compat
     return native_compat
+
 
 def prepare_tree(tree, native):
     """What horizon-mixins needs of a source folder: no links, and the commit it is (the newest Nightly)."""
@@ -197,6 +232,7 @@ def main():
     revision = ""
     tool = None
     if args.mode != "none":
+        os.environ["VESPER_HORIZON_SRC"] = str(tree)
         nc = load_registry(args.registry.resolve())
         revision = prepare_tree(tree, nc.native)
         log(f"Horizon {revision[:7]}")
