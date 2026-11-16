@@ -131,12 +131,17 @@ jobs:
           cp src/vesper-mods.json "pkg/$dir/vesper-mods.json"
           cp LICENSE-HORIZON NOTICE.md "pkg/$dir/"
           mkdir -p out
+          # Published beside the zip (and covered by the signed SHA256SUMS) so the launcher can list a build's mods
+          # without downloading it.
+          cp src/vesper-mods.json out/vesper-mods.json
           (cd pkg && 7z a -tzip ../out/vesper-rust-windows-x64.zip "$dir" > /dev/null)
 
       - uses: actions/upload-artifact@v4
         with:
           name: vesper-rust
-          path: out/vesper-rust-windows-x64.zip
+          path: |
+            out/vesper-rust-windows-x64.zip
+            out/vesper-mods.json
           if-no-files-found: error
 
   publish:
@@ -151,7 +156,7 @@ jobs:
         env:
           RUST_SIGNING_KEY: ${{ secrets.RUST_SIGNING_KEY }}
         run: |
-          sha256sum vesper-rust-windows-x64.zip > SHA256SUMS
+          sha256sum vesper-rust-windows-x64.zip vesper-mods.json > SHA256SUMS
           printf 'vesper rust release\n' > msg.bin
           cat SHA256SUMS >> msg.bin
           printf '%s\n' "$RUST_SIGNING_KEY" > key.pem
@@ -164,7 +169,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "rust-$(date -u +%Y%m%d)-${{ github.run_number }}" \
-            vesper-rust-windows-x64.zip SHA256SUMS SHA256SUMS.sig \
+            vesper-rust-windows-x64.zip vesper-mods.json SHA256SUMS SHA256SUMS.sig \
             --repo "${{ github.repository }}" \
             --title "Vesper Rust client $(date -u +%Y-%m-%d)" \
             --notes "Built from Horizon's nightly of the same day, with every native mod of Horizon's library that builds. Vesper downloads this automatically."
