@@ -19,7 +19,7 @@ permissions:
 
 env:
   UPSTREAM: https://github.com/horizon-rust/horizon/releases/download/nightly
-  VESPER_DISCORD_APP_ID: 1569533068992057504
+  VESPER_DISCORD_APP_ID: "1569533068992057504"
 
 jobs:
   # On Linux: horizon-mixins and the registry's compile check (rsync, cargo check) run there. Produces the source to build.

@@ -51,15 +51,30 @@ def ids_in(path):
 
 
 def load_registry(where):
-    """The registry's scripts, as modules (cloned once, kept in `where`)."""
+    """Clone the registry scripts and make MIXINS_REV parsing compatible."""
     if not (where / "scripts" / "native_compat.py").is_file():
         shutil.rmtree(where, ignore_errors=True)
-        subprocess.run(["git", "clone", "--depth", "1", "-q", REGISTRY_GIT, str(where)], check=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "-q", REGISTRY_GIT, str(where)],
+            check=True
+        )
+
+    compat_file = where / "scripts" / "native_compat.py"
+    source = compat_file.read_text(encoding="utf-8")
+
+    old = """r'pub const MIXINS_REV: &str = "([0-9a-f]{40})"'"""
+    new = """r'(?:pub\\s+)?const\\s+MIXINS_REV\\s*:\\s*&str\\s*=\\s*"([0-9a-f]{40})"'"""
+
+    if old in source:
+        source = source.replace(old, new, 1)
+        compat_file.write_text(source, encoding="utf-8")
+        print("Patched Horizon MIXINS_REV compatibility.")
+
     sys.path.insert(0, str(where / "scripts"))
     sys.path.insert(0, str(where / "native" / "tools"))
-    import native_compat  # noqa: E402
-    return native_compat
 
+    import native_compat
+    return native_compat
 
 def prepare_tree(tree, native):
     """What horizon-mixins needs of a source folder: no links, and the commit it is (the newest Nightly)."""
