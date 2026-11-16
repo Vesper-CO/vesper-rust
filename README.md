@@ -23,39 +23,31 @@ Based on [Horizon](https://github.com/horizon-rust/horizon) (MIT). See `NOTICE.m
 
 Until a build exists, Vesper falls back to Horizon's official build.
 
-## Native mods
+## Native mods: every mod of Horizon's library, automatically
 
-Most of Horizon's mod library (playhorizon.dev/mods) is *native* mods: Rust code that is compiled into the
-game itself. The workflow does that for the mods listed in `native-mods.txt` (one library id per line):
+Horizon's mod library ([horizon-mods](https://github.com/horizon-rust/horizon-mods)) has over a hundred native mods
+(`.hnmod`): Rust code that is compiled into the game itself. Each weekly build runs `vesper_native.py`, which uses the
+library's own tooling (the scripts it runs every day to find the mods that do not build) to:
 
-1. `native_mods.py` downloads each mod from Horizon's library, checks its size and SHA-256 against the
-   library's index, and applies it to the rebranded source with `horizon-mixins` (the tool Horizon's own
-   launcher uses).
-2. The client is compiled from that source. If that fails the build tries `native-mods-core.txt` (Horizon's
-   own six), then no mods, so a bad mod never stops a release.
-3. The mods that made it are listed in the zip as `vesper-mods.json`; Vesper's Mods page shows them as
-   "Built in". They start switched off (Vesper writes `mod.<id>:false` the first time an instance meets
-   them); players turn each one on in the game under Options > Mods.
+1. take the newest, not taken down, version of every native mod in the published index, so a mod the library gained
+   since last week is in the next build with no change here;
+2. apply them together on that week's Horizon with horizon-mixins, leaving out the ones it refuses;
+3. `cargo check` the game with them, leaving out the mods whose own code has the errors;
+4. write `vesper-mods.json` (the mods in the build) beside the client, which Vesper's Mod Library reads: the mods show
+   as **Built in** with a switch each, and start switched off.
 
-To add a mod, put its id (the name in its playhorizon.dev/mods address) in `native-mods.txt` and run the
-workflow again. Only mods built on Horizon's native hook points can be added; the Actions summary lists any
-mod that was left out and why. Native mods are not sandboxed (they run with the player's rights), so read
-what you add. Mods that do the same job (two fullbright mods, two zoom mods) can clash: add one of each.
+If the whole set does not build, the next smaller set is tried (the mods in `native-mods.txt`, then none), so a week's
+build is never lost to one mod. The run's summary page lists what was built in and why each other mod was left out.
 
-## Discord Rich Presence
+* `native-mods-exclude.txt`: ids that are never built in (one per line).
+* `native-mods.txt`: the fallback list, the mods you trust most.
+* Run the workflow by hand and pick `listed` or `none` for a smaller build.
 
-The client can show "Playing Vesper" on a player's Discord profile (singleplayer, multiplayer, hosting a world,
-the dimension). It runs under Vesper's own Discord application, so it needs one set-up step:
+**Trust.** Every native mod is code that runs with the game's rights, and this puts the library's mods in a build signed
+with your key. The library reviews each mod before publishing it, and Vesper only switches a mod on when the player does,
+but the code is in the program: add anything you do not want to `native-mods-exclude.txt`, or use `listed`.
 
-1. At https://discord.com/developers/applications make a **New Application** called `Vesper` (its name is what
-   Discord shows after "Playing").
-2. Under **Rich Presence > Art Assets** upload a square image (512 x 512 or larger) with the key `vesper`.
-   `assets/vesper-discord-512.png` is your logo scaled up; your original artwork looks better.
-3. Copy the **Application ID** (General Information). It is public, not a secret.
-4. In this repository: Settings > Secrets and variables > Actions > **Variables** > New repository variable named
-   `DISCORD_APP_ID` with that number. Run the workflow again. Without the variable the client has no presence.
-
-The launcher reads `"discord": true` from `vesper-mods.json` in the zip and steps aside while the client runs.
+Mods that need something only Horizon's own launcher does (an API package, a post-build step) are left out.
 
 ## If a build fails
 

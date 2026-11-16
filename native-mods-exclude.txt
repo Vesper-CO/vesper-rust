@@ -1,0 +1,2 @@
+# Native mods that are never built into Vesper, one id per line, even when the library lists them
+# (a mod you do not want in a signed build, or one that misbehaves). `#` starts a comment.

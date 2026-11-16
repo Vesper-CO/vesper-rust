@@ -1,27 +1,2 @@
-# Native mods compiled into the Vesper client, one id from playhorizon.dev/mods per line.
-# Only mods that build on Horizon's native hook points work here; the build skips any that cannot be used.
-# Native mods are not sandboxed: they run with the player's rights, so read what you add.
-
-# Horizon's own
-zoom
-fps_overlay
-keystrokes
-minimap
-coords_hud
-recipes
-
-# Quality of life
-appleskin
-armor_status
-held_item_info
-status_effect_hud
-toggle_sprint
-inventory_profiles
-blockscope
-eatinganimation
-chatheads
-light_overlay
-rightharvest
-
-# Left out on purpose: jade (does not compile against the current Horizon: it reads mob_hit() as a 2-value result),
-# fullbright (horizon-mixins refuses it on the current Horizon). Try them again after a Horizon update.
+# The native mods that stay in the build when the full set does not build (the fallback of `all`), one id per line.
+# Pick the ones you trust most. An empty list means the fallback is a build with no native mods.
