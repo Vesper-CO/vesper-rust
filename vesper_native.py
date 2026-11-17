@@ -179,6 +179,20 @@ def select(nc, mode, listed, excluded):
     return keep, left_out
 
 
+def strip_foreign_arch_sources(root):
+    """The voice-chat mod's build script compiles every .c file under libopus, including the ARM and MIPS ones,
+    which fail on x86 Windows (celt/arm/celt_fft_ne10.c needs NE10_dsp.h) and take the whole native build with them.
+    Those files are only used by other CPUs, so they are removed from the copy that gets built."""
+    n = 0
+    for p in list((root / "native-data").glob("**/*.c")) if (root / "native-data").is_dir() else []:
+        parts = {x.lower() for x in p.relative_to(root).parts[:-1]}
+        if "opus" in parts and parts & {"arm", "mips", "aarch64"}:
+            p.unlink()
+            n += 1
+    if n:
+        log(f"Removed {n} non-x86 libopus source file(s).")
+
+
 def build_set(nc, tool, tree, revision, bundles, compile_check):
     """(stage folder, the bundles in it, {id: why left out}) for `bundles`, or (None, [], why) when nothing builds."""
     why = {}
@@ -253,6 +267,7 @@ def main():
 
     shutil.rmtree(args.out, ignore_errors=True)
     shutil.copytree(stage if stage is not None else tree, args.out, symlinks=False)
+    strip_foreign_arch_sources(args.out)
 
     meta = {}
     if applied:

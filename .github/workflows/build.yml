@@ -115,6 +115,8 @@ jobs:
         if: steps.native.outcome == 'failure'
         shell: bash
         run: |
+          echo "::warning title=Native mods NOT built::The native build failed on Windows, so this release has no native mods. See the Build the client step."
+          printf '## Native mods were NOT built\n\nThe Windows build with native mods failed (see the "Build the client" step); this release is the plain client.\n' >> "$GITHUB_STEP_SUMMARY"
           rm -rf src && mkdir src
           tar -xzf source-plain.tar.gz -C src
           printf '{"mods":[],"discord":true,"mode":"none"}\n' > src/vesper-mods.json
