@@ -193,6 +193,41 @@ def strip_foreign_arch_sources(root):
         log(f"Removed {n} non-x86 libopus source file(s).")
 
 
+def fix_opus_for_msvc(root):
+    """libopus declares its scratch buffers as C99 variable-length arrays (VAR_ARRAYS), which Microsoft's C compiler
+    rejects (bands.c: error C2057 "expected constant expression"). Opus has an alloca() mode for this; select it
+    when compiling with MSVC. Guarded by _MSC_VER, so the Linux/macOS builds are untouched."""
+    patch = (
+        "\n#if defined(_MSC_VER)\n"
+        "/* Vesper: MSVC has no variable-length arrays; use alloca instead */\n"
+        "# undef VAR_ARRAYS\n"
+        "# ifndef USE_ALLOCA\n"
+        "#  define USE_ALLOCA\n"
+        "# endif\n"
+        "# include <malloc.h>\n"
+        "# ifndef alloca\n"
+        "#  define alloca _alloca\n"
+        "# endif\n"
+        "#endif\n"
+    )
+    n = 0
+    base = root / "native-data"
+    for p in (base.glob("**/stack_alloc.h") if base.is_dir() else []):
+        if "opus" not in {x.lower() for x in p.relative_to(root).parts[:-1]}:
+            continue
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        if "Vesper: MSVC" in text:
+            continue
+        m = re.search(r"^[ \t]*#[ \t]*define[ \t]+STACK_ALLOC_H\b[^\n]*\n", text, re.M)
+        if not m:
+            log(f"WARNING: no include guard in {p.relative_to(root)}; MSVC fix not applied")
+            continue
+        p.write_text(text[: m.end()] + patch + text[m.end():], encoding="utf-8")
+        n += 1
+    if n:
+        log(f"Patched {n} libopus stack_alloc.h for MSVC.")
+
+
 def build_set(nc, tool, tree, revision, bundles, compile_check):
     """(stage folder, the bundles in it, {id: why left out}) for `bundles`, or (None, [], why) when nothing builds."""
     why = {}
@@ -268,6 +303,7 @@ def main():
     shutil.rmtree(args.out, ignore_errors=True)
     shutil.copytree(stage if stage is not None else tree, args.out, symlinks=False)
     strip_foreign_arch_sources(args.out)
+    fix_opus_for_msvc(args.out)
 
     meta = {}
     if applied:
